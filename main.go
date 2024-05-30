@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/tls"
 	"encoding/base64"
 	"encoding/json"
 	"github.com/gin-gonic/gin"
@@ -15,11 +16,8 @@ import (
 	"time"
 )
 
-var authParamsCache *SafeCache
-
-func init() {
-	authParamsCache = NewSafeCache(24 * time.Hour)
-}
+var authParamsCache = NewSafeCache(24 * time.Hour)
+var client = resty.New().SetTLSClientConfig(&tls.Config{InsecureSkipVerify: true})
 
 // Emby的API响应结构
 type EmbyResponse struct {
@@ -101,7 +99,7 @@ type VodResponse struct {
 
 // Fetch and convert video list from Emby to VOD format
 func fetchAndConvertVideoList(c *gin.Context, parentId string, page int, search string) (*VodResponse, error) {
-	resp, err := resty.New().R().
+	resp, err := client.R().
 		SetHeader("Accept", "application/json").
 		Get(upstreamUrl(c) + "/emby/Users/e166b644a9e642d4ad2a1d71c38a1c76/Items?IncludeItemTypes=Series&Recursive=true&fields=" + url.QueryEscape("Overview,ProductionYear,DateLastContentAdded") + "&SortBy=ProductionYear%2CPremiereDate%2CSortName&SortOrder=Descending&Limit=20&SearchTerm=" + url.QueryEscape(search) + "&StartIndex=" + strconv.Itoa(page*20) + "&ParentId=" + parentId + "&" + upstreamAuthParams(c))
 	if err != nil {
@@ -135,7 +133,7 @@ func fetchAndConvertVideoList(c *gin.Context, parentId string, page int, search 
 }
 
 func fetchAndConvertDetail(c *gin.Context, id string) ([]VodVideoItem, error) {
-	resp, err := resty.New().R().
+	resp, err := client.R().
 		SetHeader("Accept", "application/json").
 		Get(upstreamUrl(c) + "/emby/Users/e166b644a9e642d4ad2a1d71c38a1c76/Items/" + id + "?fields=Overview&" + upstreamAuthParams(c))
 	if err != nil {
@@ -155,7 +153,7 @@ func fetchAndConvertDetail(c *gin.Context, id string) ([]VodVideoItem, error) {
 		return vodItems, nil
 	}
 
-	resp, err = resty.New().R().
+	resp, err = client.R().
 		SetHeader("Accept", "application/json").
 		Get(upstreamUrl(c) + "/emby/Users/e166b644a9e642d4ad2a1d71c38a1c76/Items?IncludeItemTypes=Episode&Recursive=true&ParentId=" + id + "&" + upstreamAuthParams(c))
 	if err != nil {
@@ -215,7 +213,7 @@ func upstreamAuthParamsInternal(c *gin.Context, accountBase64 string) string {
 	commonParams := upstreamCommonParams(c)
 	password, _ := account.User.Password()
 
-	resp, err := resty.New().R().
+	resp, err := client.R().
 		SetHeader("Accept", "application/json").
 		SetFormData(map[string]string{"Username": account.User.Username(), "Pw": password}).
 		Post(upstreamUrl(c) + "/emby/Users/authenticatebyname?" + commonParams)
@@ -259,7 +257,7 @@ func upstreamUrl(c *gin.Context) string {
 
 // 处理响应的函数，转换Emby格式到VOD格式
 func fetchAndConvertClass(c *gin.Context) ([]VodClass, error) {
-	resp, err := resty.New().R().
+	resp, err := client.R().
 		SetHeader("Accept", "application/json").
 		Get(upstreamUrl(c) + "/emby/Users/e166b644a9e642d4ad2a1d71c38a1c76/Views" + "?" + upstreamAuthParams(c))
 	if err != nil {
